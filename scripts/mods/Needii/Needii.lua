@@ -120,7 +120,7 @@ mod.GetBasePlayerNeed = function(player)
 	else
 		if not player.isBot 		then weight = weight + 1 end
 		if not player.isDead 		then weight = weight + 1 end
-		if not player.isDowned 	then weight = weight + 1 end
+		if not player.isDowned	then weight = weight + 1 end
 	end
 
 	return weight
