@@ -1,0 +1,11 @@
+mod = [
+	"Needii"
+]
+
+package = [
+	"resource_packages/Needii/Needii"
+]
+
+lua = [
+	"scripts/mods/Needii/*"
+]
