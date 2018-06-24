@@ -251,39 +251,46 @@ mod.GetPartyInfos = function()
 	for _, player in pairs(players) do
 		local profile   = SPProfiles[player:profile_index()]
 		local career    = profile.careers[player:career_index()]
-		local health    = ScriptUnit.extension(player.player_unit, "health_system")
-		local inventory = ScriptUnit.extension(player.player_unit, "inventory_system")
-		local status    = ScriptUnit.extension(player.player_unit, "status_system")
-		local eslots    = inventory:equipment().slots
 
-		-- items
-		local slots = {}
-		for i,slotName in ipairs({"slot_healthkit", "slot_potion", "slot_grenade"}) do
-			if eslots[slotName] ~= nil then
-				local slot = eslots[slotName]
-				slots[slotName] = {
-					name = slot.master_item and slot.master_item.name or slot.item_data.name
-				}
+		if profile ~= nil and career ~= nil and
+					ScriptUnit.has_extension(player.player_unit, "health_system") and
+					ScriptUnit.has_extension(player.player_unit, "inventory_system") and
+					ScriptUnit.has_extension(player.player_unit, "status_system") then
+				
+			local health    = ScriptUnit.extension(player.player_unit, "health_system")
+			local inventory = ScriptUnit.extension(player.player_unit, "inventory_system")
+			local status    = ScriptUnit.extension(player.player_unit, "status_system")
+			local eslots    = inventory:equipment().slots
+
+			-- items
+			local slots = {}
+			for i,slotName in ipairs({"slot_healthkit", "slot_potion", "slot_grenade"}) do
+				if eslots[slotName] ~= nil then
+					local slot = eslots[slotName]
+					slots[slotName] = {
+						name = slot.master_item and slot.master_item.name or slot.item_data.name
+					}
+				end
 			end
+
+			-- ammo
+			local ammo = mod.GetPlayerAmmo(player, eslots["slot_ranged"])
+
+			-- talents
+			--local talents = mod.GetPlayersTalents(player)
+
+			table.insert(playerInfos, {
+				name     = profile.display_name,
+				career   = career.name,
+				talents  = nil,
+				inv      = slots,
+				hp       = health:current_health_percent(),
+				ammo     = ammo,
+				isDowned = status:is_wounded(),
+				isDead   = status:is_dead(),
+				isBot    = not player:is_player_controlled()
+			})
 		end
-
-		-- ammo
-		local ammo = mod.GetPlayerAmmo(player, eslots["slot_ranged"])
-
-		-- talents
-		--local talents = mod.GetPlayersTalents(player)
-
-		table.insert(playerInfos, {
-			name     = profile.display_name,
-			career   = career.name,
-			talents  = nil,
-			inv      = slots,
-			hp       = health:current_health_percent(),
-			ammo     = ammo,
-			isDowned = status:is_wounded(),
-			isDead   = status:is_dead(),
-			isBot    = not player:is_player_controlled()
-		})
 	end
 
 	return playerInfos
@@ -359,7 +366,7 @@ end
 
 -- Hooks
 ------------------------------
-mod:hook("InteractionUI.update", function (func, self, dt, t, my_player)
+mod:hook(InteractionUI, "update", function (func, self, dt, t, my_player)
 	local result = func(self, dt, t, my_player)
 
 	local ui_renderer   = self.ui_renderer
