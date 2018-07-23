@@ -107,7 +107,7 @@ mod.debug = {
 mod.DebugLog = function(msg)
 	if mod.conf.debugLogging == 2 then
 		mod:echo(msg)
-	elseif mod.conf.debugLogging == 2 then
+	elseif mod.conf.debugLogging == 1 then
 		print(msg)
 	end
 end
@@ -230,76 +230,92 @@ mod.DrawPlayerIcons = function(render)
 	if (mod.vars.sortedPartyInfo ~= nil) then
 		for i,info in pairs(mod.vars.sortedPartyInfo) do
 			local iconName  = mod.conf.useCareerIcons and info.career or info.name
-			local tex       = mod.data.iconLookUp[iconName].texture
-			local arrowSize = Vector2(31 * scale, 15 * scale)
-			local arrowPos  = Vector3(position.x + (size.x/2 - arrowSize.x/2), position.y + size.y -5, position.y)
+			local lookUpObj = mod.data.iconLookUp[iconName]
 
-			--UIRenderer.script_draw_bitmap(render.gui, render.render_settings, "drop_down_menu_arrow", arrowPos, arrowSize)
-			UIRenderer.script_draw_bitmap(render.gui, render.render_settings, tex, position, size)
+			if lookUpObj ~= nil then
+				local tex       = lookUpObj.texture
+				local arrowSize = Vector2(31 * scale, 15 * scale)
+				local arrowPos  = Vector3(position.x + (size.x/2 - arrowSize.x/2), position.y + size.y -5, position.y)
 
-			position.x = position.x + size.x + spacing
+				--UIRenderer.script_draw_bitmap(render.gui, render.render_settings, "drop_down_menu_arrow", arrowPos, arrowSize)
+				UIRenderer.script_draw_bitmap(render.gui, render.render_settings, tex, position, size)
+
+				position.x = position.x + size.x + spacing
+			end
 		end
 	end
 	
 end
 
 mod.GetPartyInfos = function()
-	local player_manager = Managers.player
-	local players        = player_manager:human_and_bot_players()
-	local playerInfos    = {}
 
-	for _, player in pairs(players) do
-		local profile   = SPProfiles[player:profile_index()]
-		local career    = profile.careers[player:career_index()]
+	-- Wrap in a pcall just to be extra safe incase there is some more weirdness with some weapon swaping leading to a crash
+	-- pcall overhead should be negitable esp since this function isn't called per frame
+	local ok, result = pcall(function()
+		local player_manager = Managers.player
+		local players        = player_manager:human_and_bot_players()
+		local playerInfos    = {}
 
-		if profile ~= nil and career ~= nil and
-					ScriptUnit.has_extension(player.player_unit, "health_system") and
-					ScriptUnit.has_extension(player.player_unit, "inventory_system") and
-					ScriptUnit.has_extension(player.player_unit, "status_system") then
-				
-			local health    = ScriptUnit.extension(player.player_unit, "health_system")
-			local inventory = ScriptUnit.extension(player.player_unit, "inventory_system")
-			local status    = ScriptUnit.extension(player.player_unit, "status_system")
-			local eslots    = inventory:equipment().slots
+		for _, player in pairs(players) do
+			local profile   = SPProfiles[player:profile_index()]
+			local career    = profile.careers[player:career_index()]
 
-			-- items
-			local slots = {}
-			for i,slotName in ipairs({"slot_healthkit", "slot_potion", "slot_grenade"}) do
-				if eslots[slotName] ~= nil then
-					local slot = eslots[slotName]
-					slots[slotName] = {
-						name = slot.master_item and slot.master_item.name or slot.item_data.name
-					}
+			if profile ~= nil and career ~= nil and
+						ScriptUnit.has_extension(player.player_unit, "health_system") and
+						ScriptUnit.has_extension(player.player_unit, "inventory_system") and
+						ScriptUnit.has_extension(player.player_unit, "status_system") then
+					
+				local health    = ScriptUnit.extension(player.player_unit, "health_system")
+				local inventory = ScriptUnit.extension(player.player_unit, "inventory_system")
+				local status    = ScriptUnit.extension(player.player_unit, "status_system")
+				local eslots    = inventory:equipment().slots
+
+				-- items
+				local slots = {}
+				for i,slotName in ipairs({"slot_healthkit", "slot_potion", "slot_grenade"}) do
+					if eslots[slotName] ~= nil then
+						local slot = eslots[slotName]
+						slots[slotName] = {
+							name = slot.master_item and slot.master_item.name or slot.item_data.name
+						}
+					end
 				end
+
+				-- ammo
+				local ammo = mod.GetPlayerAmmo(player, eslots["slot_ranged"])
+
+				-- talents
+				--local talents = mod.GetPlayersTalents(player)
+
+				table.insert(playerInfos, {
+					name     = profile.display_name,
+					career   = career.name,
+					talents  = nil,
+					inv      = slots,
+					hp       = health:current_health_percent(),
+					ammo     = ammo,
+					isDowned = status:is_wounded(),
+					isDead   = status:is_dead(),
+					isBot    = not player:is_player_controlled()
+				})
 			end
-
-			-- ammo
-			local ammo = mod.GetPlayerAmmo(player, eslots["slot_ranged"])
-
-			-- talents
-			--local talents = mod.GetPlayersTalents(player)
-
-			table.insert(playerInfos, {
-				name     = profile.display_name,
-				career   = career.name,
-				talents  = nil,
-				inv      = slots,
-				hp       = health:current_health_percent(),
-				ammo     = ammo,
-				isDowned = status:is_wounded(),
-				isDead   = status:is_dead(),
-				isBot    = not player:is_player_controlled()
-			})
 		end
-	end
 
-	return playerInfos
+		return playerInfos
+	end)
+
+	if ok then
+		return result
+	else
+		print("Needii: Error in GetPartyInfos, bad stuff happend :<")
+		print("Error: " .. result)
+
+		return nil
+	end
 end
 
 mod.GetIconOrder = function(itemName, partyInfos)
 	local itemHandler = mod.itemHandlers[itemName]
-
-	mod:dump(partyInfos, "partyInfos", 4)
 
 	if (itemHandler ~= nil and partyInfos ~= nil) then
 		local weightedList = {}
@@ -329,15 +345,19 @@ mod.GetIconOrder = function(itemName, partyInfos)
 end
 
 mod.GetPlayerAmmo = function(player, rangedSlot)
-	local itemData = rangedSlot.item_data
-	local game     = Managers.state.network:game()
-	local go_id    = Managers.state.unit_storage:go_id(player.player_unit)
+	if rangedSlot ~= nil then
+		local itemData = rangedSlot.item_data
+		local game     = Managers.state.network:game()
+		local go_id    = Managers.state.unit_storage:go_id(player.player_unit)
 
-	if itemData ~= nil then
-		local item_template = BackendUtils.get_item_template(itemData)
-		if game and go_id then
-			return GameSession.game_object_field(game, go_id, "ammo_percentage")
+		if itemData ~= nil then
+			local item_template = BackendUtils.get_item_template(itemData)
+			if game and go_id then
+				return GameSession.game_object_field(game, go_id, "ammo_percentage")
+			end
 		end
+	else
+		return 0
 	end
 
 end
